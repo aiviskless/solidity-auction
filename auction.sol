@@ -1,30 +1,77 @@
+// SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.7.0 <0.9.0;
 
 // uint constant MIN_BID_INCREMENT = 1.1;
 
 contract Auction {
     address payable public admin;
+    address public highestBidder;
+
+    uint public highestBid;
     uint public auctionEndTime;
 
-    address public highestBidder;
-    uint public highestBid;
-
     // Allowed withdrawals of previous bids
+    // TODO: should rename this var
     mapping(address => uint) pendingReturns;
 
-    bool ended;
+    enum Phase { Init, Start, End }
+    Phase public state = Phase.End;
 
-    constructor(uint _biddingTime, uint _initialBid, address payable _admin) {
+    // modifiers
+    modifier validPhase(Phase reqPhase) {
+        require(state == reqPhase, "Wrong Phase");
+        _;
+    }
+
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Only admin might call this function");
+        _;
+    }
+
+    constructor(address payable _admin) {
         admin = _admin;
+        state = Phase.Init;
+    }
+
+    function changeState(Phase x) private {
+        require (state < x);
+        state = x;
+    }
+
+    function getState() public view returns(Phase currState){
+        currState = state;
+    }
+
+    function startAuction(uint _biddingTime, uint _initialBid) onlyAdmin public {
         auctionEndTime = block.timestamp + _biddingTime;
         highestBid = _initialBid;
+
+        changeState(Phase.Start);
     }
+
+    function endAuction() public {
+        require(block.timestamp >= auctionEndTime, "Auction not yet ended");
+
+        require(state != Phase.End, "endAuction has already been called");
+
+        changeState(Phase.End);
+
+        // transfer vs send?
+        admin.transfer(highestBid);
+    }
+
+    // TODO: function cancelAuction?????
+    // function cancelAuction() onlyOwner onlyBeforeEnd onlyNotCanceled returns (bool success) {
+    //     canceled = true;
+    //     LogCanceled();
+    //     return true;
+    // }
     
     // function getMinimumAmountToBid() public view returns(uint) {
     //     return highestBid * MIN_BID_INCREMENT;
     // }
 
-    function bid() public payable {
+    function bid() public validPhase(Phase.Start) payable {
         // Revert the call if the bidding period is over.
         require(block.timestamp <= auctionEndTime, "Auction already ended");
 
@@ -44,6 +91,7 @@ contract Auction {
     }
 
     // Withdraw a bid that was overbid.
+    // TODO: in what phase is valid?
     function withdraw() public returns (bool) {
         uint amount = pendingReturns[msg.sender];
         if (amount > 0) {
@@ -58,24 +106,11 @@ contract Auction {
         return true;
     }
 
-    // function recallBid(uint bidIterator) public {
-    //     require(bidIterator < bids.length, "Invalid bidIterator");
-    //     require(msg.sender == bids[bidIterator].bidderAddress, "msg.sender != bidderAddress");
-    //     require(bids[bidIterator].valid, "Bid is invalid; aborting");
-
-    //     uint amountToSend = bids[bidIterator].amount;
-    //     bids[bidIterator].amount = 0;
-    //     bids[bidIterator].valid = false;
-    //     bids[bidIterator].bidderAddress.transfer(amountToSend);
+    // function cancelBid() public returns (bool) {
+    //     require(msg.sender == highestBidder, "You can only cancel your own bid");
+    // // highestBidder ????
+    //     uint amount = highestBid;
+    //     highestBid = 0;
+    //     bids[bidIterator].bidderAddress.transfer(amount);
     // }
-
-    function auctionEnd() public {
-        require(block.timestamp >= auctionEndTime, "Auction not yet ended");
-        require(!ended, "auctionEnd has already been called");
-
-        ended = true;
-
-        // transfer vs send?
-        admin.transfer(highestBid);
-    }
 }

@@ -1,6 +1,6 @@
 pragma solidity >=0.7.0 <0.9.0;
 
-uint constant MIN_BID_INCREMENT = 1.1;
+// uint constant MIN_BID_INCREMENT = 1.1;
 
 contract Auction {
     address payable public admin;
@@ -20,18 +20,19 @@ contract Auction {
         highestBid = _initialBid;
     }
     
-    function getMinimumAmountToBid() public view returns(uint) {
-        return highestBid * MIN_BID_INCREMENT;
-    }
+    // function getMinimumAmountToBid() public view returns(uint) {
+    //     return highestBid * MIN_BID_INCREMENT;
+    // }
 
     function bid() public payable {
         // Revert the call if the bidding period is over.
         require(block.timestamp <= auctionEndTime, "Auction already ended");
 
-       
         require(msg.value > highestBid, "There already is a higher bid");
 
         require(msg.sender != admin, "Administrator can not bid");
+
+        require(msg.sender != highestBidder, "You can not overbid your bid");
 
         if (highestBid != 0) {
             
@@ -56,6 +57,17 @@ contract Auction {
         }
         return true;
     }
+
+    // function recallBid(uint bidIterator) public {
+    //     require(bidIterator < bids.length, "Invalid bidIterator");
+    //     require(msg.sender == bids[bidIterator].bidderAddress, "msg.sender != bidderAddress");
+    //     require(bids[bidIterator].valid, "Bid is invalid; aborting");
+
+    //     uint amountToSend = bids[bidIterator].amount;
+    //     bids[bidIterator].amount = 0;
+    //     bids[bidIterator].valid = false;
+    //     bids[bidIterator].bidderAddress.transfer(amountToSend);
+    // }
 
     function auctionEnd() public {
         require(block.timestamp >= auctionEndTime, "Auction not yet ended");

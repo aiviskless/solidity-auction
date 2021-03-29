@@ -53,7 +53,7 @@ contract Auction {
     }
 
     function startAuction(uint _biddingTimeInMinutes, uint _initialBid) onlyAdmin public {
-        auctionEndTime = block.timestamp + _biddingTimeInMinutes * 60000;
+        auctionEndTime = block.timestamp + _biddingTimeInMinutes * 60;
         highestBid = _initialBid;
         initialBid = _initialBid;
 

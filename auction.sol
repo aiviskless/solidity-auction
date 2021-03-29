@@ -127,7 +127,7 @@ contract Auction {
     }
 
     // use case - made mistake
-    function recallBid() validPhase(Phase.Start) public {
+    function recallBid() validPhase(Phase.Start) public returns(bool) {
         require(msg.sender == highestBidder, "msg.sender != highestBidder");
 
         address payable msgSenderPayable = payable(msg.sender);
@@ -145,32 +145,39 @@ contract Auction {
 
                     // set previous highest bidder as new highest
                     if (i > 0) {
-                        bool activeBidFound = false;
+                        // bool activeBidFound = false;
                         for (uint j=i-1; j>=0; j--) {
                             if (bids[j].active) {
                                 highestBidder = bids[j].bidder;
                                 highestBid = bids[j].amount;
-                                activeBidFound = true;
-                                break;
+                                // activeBidFound = true;
+                                // break;
+                                return true;
                             }
                         }
 
-                        if (!activeBidFound) {
+                        // if (!activeBidFound) {
                             // reset to initial state
                             highestBidder = address(0);
                             highestBid = initialBid;
-                        }
+                            return true;
+                        // }
                     } else {
                         highestBidder = address(0);
                         highestBid = initialBid;
+                        return true;
                     }
                 } else {
                     // if send fails - reset previous state
                     bids[i].active = true;
+                    return false;
                 }
 
-                break;
+                // break;
+                // return true;
             }
         }
+
+        return false;
     }
 }

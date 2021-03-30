@@ -22,6 +22,7 @@ contract Auction {
     Bid[] public bids;
 
     // total allowed withdrawal amount of all bids for each bidder
+    // TODO: set to private
     mapping(address => uint) public bidderFunds;
 
     enum Phase { Init, Start, End, Cancel }
@@ -64,7 +65,7 @@ contract Auction {
         state = x;
     }
 
-    function startAuction(uint _biddingTimeInMinutes, uint _initialBid) onlyAdmin public {
+    function startAuction(uint _biddingTimeInMinutes, uint _initialBid) validPhase(Phase.Init) onlyAdmin public {
         auctionEndTime = block.timestamp + _biddingTimeInMinutes * 60;
         highestBid = _initialBid;
         initialBid = _initialBid;
@@ -72,14 +73,13 @@ contract Auction {
         changeState(Phase.Start);
     }
 
-
-    function endAuction() onlyAdmin public {
-        require(block.timestamp >= auctionEndTime, "Auction not yet ended");
+    function endAuction() validPhase(Phase.Start) onlyAdmin public {
+        require(block.timestamp >= auctionEndTime, "Auction end time not yet exceeded");
         require(state != Phase.End, "endAuction has already been called");
         require(state != Phase.Cancel, "cancelAuction has already been called");
 
         changeState(Phase.End);
-        
+
         if (initialBid != highestBid) {
             admin.transfer(highestBid);
             // reduce amount that winner can withdraw back from previous bids
@@ -87,8 +87,7 @@ contract Auction {
         }
     }
 
-    function cancelAuction() onlyAdmin public {
-        changeState(Phase.End);
+    function cancelAuction() validPhase(Phase.Start) onlyAdmin public {
         changeState(Phase.Cancel);
     }
 
@@ -111,7 +110,9 @@ contract Auction {
 
     // withdraw a bid(s) that was overbid
     function withdraw() public {
-        require(msg.sender != highestBidder, "msg.sender == highestBidder");
+        if (state != Phase.End && state != Phase.Cancel) {
+            require(msg.sender != highestBidder, "msg.sender == highestBidder");
+        }
 
         uint amount = bidderFunds[msg.sender];
 

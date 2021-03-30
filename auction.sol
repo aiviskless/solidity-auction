@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.7.0 <0.9.0;
 
-// uint constant MIN_BID_INCREMENT = 1.1;
-
 contract Auction {
     struct Bid {
         address payable bidder;
@@ -11,21 +9,28 @@ contract Auction {
     }
 
     address payable private admin;
-    // private
+    // TODO: set to private
     address public highestBidder;
 
     uint private initialBid;
+    // TODO: set to private
     uint public highestBid;
+    // TODO: set to private
     uint public auctionEndTime;
 
-    // private
+    // TODO: set to private
     Bid[] public bids;
 
-    // total allowed withdrawals of previous bids
-    mapping(address => uint) public pendingWithdrawals;
+    // total allowed withdrawal amount of all bids for each bidder
+    mapping(address => uint) public bidderFunds;
 
-    enum Phase { Init, Start, End }
+    enum Phase { Init, Start, End, Cancel }
     Phase public state = Phase.End;
+
+    constructor() payable {
+        admin = payable(msg.sender);
+        state = Phase.Init;
+    }
 
     // modifiers
     modifier validPhase(Phase reqPhase) {
@@ -37,19 +42,26 @@ contract Auction {
         require(msg.sender == admin, "Only admin might call this function");
         _;
     }
+    /////////////////
 
-    constructor() payable {
-        admin = payable(msg.sender);
-        state = Phase.Init;
+    // view functions
+    function getState() public view returns(Phase currState){
+        currState = state;
     }
+
+    function getAuctionEndTime() public view returns(uint){
+        return auctionEndTime;
+    }
+
+    function getHighestBid() public view returns (uint) {
+        return highestBid;
+    }
+    /////////////////
 
     function changeState(Phase x) private {
         require (state < x);
-        state = x;
-    }
 
-    function getState() public view returns(Phase currState){
-        currState = state;
+        state = x;
     }
 
     function startAuction(uint _biddingTimeInMinutes, uint _initialBid) onlyAdmin public {
@@ -60,41 +72,35 @@ contract Auction {
         changeState(Phase.Start);
     }
 
-    function endAuction() public {
-        require(block.timestamp >= auctionEndTime, "Auction not yet ended");
 
+    function endAuction() onlyAdmin public {
+        require(block.timestamp >= auctionEndTime, "Auction not yet ended");
         require(state != Phase.End, "endAuction has already been called");
+        require(state != Phase.Cancel, "cancelAuction has already been called");
 
         changeState(Phase.End);
         
         if (initialBid != highestBid) {
             admin.transfer(highestBid);
+            // reduce amount that winner can withdraw back from previous bids
+            bidderFunds[highestBidder] -= highestBid;
         }
     }
 
-    // TODO: function cancelAuction?????
-    // function cancelAuction() onlyOwner onlyBeforeEnd onlyNotCanceled returns (bool success) {
-    //     canceled = true;
-    //     LogCanceled();
-    //     return true;
-    // }
-    
-    // function getMinimumAmountToBid() public view returns(uint) {
-    //     return highestBid * MIN_BID_INCREMENT;
-    // }
+    function cancelAuction() onlyAdmin public {
+        changeState(Phase.End);
+        changeState(Phase.Cancel);
+    }
 
     function bid() public validPhase(Phase.Start) payable {
-        // Revert the call if the bidding period is over.
+        // revert the call if the bidding period is over.
         require(block.timestamp <= auctionEndTime, "Auction already ended");
-
         require(msg.value > highestBid, "There already is a higher bid");
-
         require(msg.sender != admin, "Administrator can not bid");
-
         require(msg.sender != highestBidder, "You can not overbid your bid");
 
         if (highestBid != 0) {
-            pendingWithdrawals[msg.sender] += msg.value;
+            bidderFunds[msg.sender] += msg.value;
         }
 
         bids.push(Bid(payable(msg.sender), msg.value, true));
@@ -103,16 +109,15 @@ contract Auction {
         highestBid = msg.value;
     }
 
-    // Withdraw a bid that was overbid.
-    // TODO: in what phase is valid?
+    // withdraw a bid(s) that was overbid
     function withdraw() public {
         require(msg.sender != highestBidder, "msg.sender == highestBidder");
 
-        uint amount = pendingWithdrawals[msg.sender];
+        uint amount = bidderFunds[msg.sender];
 
         if (amount > 0) {
             // need to set this to zero first for security
-            pendingWithdrawals[msg.sender] = 0;
+            bidderFunds[msg.sender] = 0;
 
             if (payable(msg.sender).send(amount)) {
                 for (uint i=0; i<bids.length-1; i++) {
@@ -121,7 +126,7 @@ contract Auction {
                     }
                 }
             } else {
-                pendingWithdrawals[msg.sender] = amount;
+                bidderFunds[msg.sender] = amount;
             }
         }
     }
@@ -141,40 +146,36 @@ contract Auction {
 
                 if (msgSenderPayable.send(amountToSend)) {
                     // update overall pending returns
-                    pendingWithdrawals[highestBidder] -= amountToSend;
+                    bidderFunds[highestBidder] -= amountToSend;
 
                     // set previous highest bidder as new highest
                     if (i > 0) {
-                        // bool activeBidFound = false;
                         for (uint j=i-1; j>=0; j--) {
                             if (bids[j].active) {
                                 highestBidder = bids[j].bidder;
                                 highestBid = bids[j].amount;
-                                // activeBidFound = true;
-                                // break;
+
                                 return true;
                             }
                         }
 
-                        // if (!activeBidFound) {
-                            // reset to initial state
-                            highestBidder = address(0);
-                            highestBid = initialBid;
-                            return true;
-                        // }
+                        // reset to initial state
+                        highestBidder = address(0);
+                        highestBid = initialBid;
+
+                        return true;
                     } else {
                         highestBidder = address(0);
                         highestBid = initialBid;
+
                         return true;
                     }
                 } else {
                     // if send fails - reset previous state
                     bids[i].active = true;
+
                     return false;
                 }
-
-                // break;
-                // return true;
             }
         }
 

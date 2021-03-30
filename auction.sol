@@ -21,6 +21,10 @@ contract Auction {
     // TODO: set to private
     Bid[] public bids;
 
+    // TODO: set to private
+    // used to send money back after auction end
+    address payable[] public bidders;
+
     // total allowed withdrawal amount of all bids for each bidder
     // TODO: set to private
     mapping(address => uint) public bidderFunds;
@@ -50,11 +54,11 @@ contract Auction {
         currState = state;
     }
 
-    function getAuctionEndTime() public view returns(uint){
+    function getAuctionEndTime() validPhase(Phase.Start) public view returns(uint){
         return auctionEndTime;
     }
 
-    function getHighestBid() public view returns (uint) {
+    function getHighestBid() validPhase(Phase.Start) public view returns (uint) {
         return highestBid;
     }
     /////////////////
@@ -63,6 +67,23 @@ contract Auction {
         require (state < x);
 
         state = x;
+    }
+
+    // gets called only after auction ends
+    function withdrawAllBids() private {
+        for (uint i=0; i<bidders.length; i++) {
+            uint amount = bidderFunds[bidders[i]];
+
+            if (amount > 0) {
+                // reset funds - need to set this to zero first for security
+                bidderFunds[bidders[i]] = 0;
+
+                if (!bidders[i].send(amount)) {
+                    // handle failed send()
+                    bidderFunds[bidders[i]] = amount;
+                }
+            }
+        }
     }
 
     function startAuction(uint _biddingTimeInMinutes, uint _initialBid) validPhase(Phase.Init) onlyAdmin public {
@@ -75,8 +96,6 @@ contract Auction {
 
     function endAuction() validPhase(Phase.Start) onlyAdmin public {
         require(block.timestamp >= auctionEndTime, "Auction end time not yet exceeded");
-        require(state != Phase.End, "endAuction has already been called");
-        require(state != Phase.Cancel, "cancelAuction has already been called");
 
         changeState(Phase.End);
 
@@ -85,11 +104,14 @@ contract Auction {
             admin.transfer(highestBid);
             // reduce amount that winner can withdraw back from previous bids
             bidderFunds[highestBidder] -= highestBid;
+
+            withdrawAllBids();
         }
     }
 
     function cancelAuction() validPhase(Phase.Start) onlyAdmin public {
         changeState(Phase.Cancel);
+        withdrawAllBids();
     }
 
     function bid() public validPhase(Phase.Start) payable {
@@ -98,15 +120,27 @@ contract Auction {
         require(msg.sender != admin, "Administrator can not bid");
         require(msg.sender != highestBidder, "You can not overbid your bid");
 
-        if (highestBid != 0) {
-            // add to amount to be withdrawn after auction
-            bidderFunds[msg.sender] += msg.value;
-        }
+        // add to amount to be withdrawn after auction
+        bidderFunds[msg.sender] += msg.value;
 
         bids.push(Bid(payable(msg.sender), msg.value, true));
 
         highestBidder = msg.sender;
         highestBid = msg.value;
+
+        // find if new bidder
+        bool newBidder = true;
+
+        if (bidders.length > 1) {
+            for (uint i=0; i<bidders.length-1; i++) {
+                if (bidders[i] == msg.sender) {
+                    newBidder = false;
+                    break;
+                }
+            }
+        }
+
+        if (newBidder) bidders.push(payable(msg.sender));
     }
 
     // withdraw a bid(s) that was overbid
@@ -125,7 +159,7 @@ contract Auction {
             if (payable(msg.sender).send(amount)) {
                 for (uint i=0; i<bids.length-1; i++) {
                     if (bids[i].bidder == msg.sender) {
-                        // set bid as inactove
+                        // set bid as inactive
                         bids[i].active = false;
                     }
                 }

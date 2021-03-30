@@ -81,6 +81,7 @@ contract Auction {
         changeState(Phase.End);
 
         if (initialBid != highestBid) {
+            // admin receives money
             admin.transfer(highestBid);
             // reduce amount that winner can withdraw back from previous bids
             bidderFunds[highestBidder] -= highestBid;
@@ -92,13 +93,13 @@ contract Auction {
     }
 
     function bid() public validPhase(Phase.Start) payable {
-        // revert the call if the bidding period is over.
         require(block.timestamp <= auctionEndTime, "Auction already ended");
         require(msg.value > highestBid, "There already is a higher bid");
         require(msg.sender != admin, "Administrator can not bid");
         require(msg.sender != highestBidder, "You can not overbid your bid");
 
         if (highestBid != 0) {
+            // add to amount to be withdrawn after auction
             bidderFunds[msg.sender] += msg.value;
         }
 
@@ -110,6 +111,7 @@ contract Auction {
 
     // withdraw a bid(s) that was overbid
     function withdraw() public {
+        // highest bidder can not withdraw all funds while auction is active
         if (state != Phase.End && state != Phase.Cancel) {
             require(msg.sender != highestBidder, "msg.sender == highestBidder");
         }
@@ -117,23 +119,26 @@ contract Auction {
         uint amount = bidderFunds[msg.sender];
 
         if (amount > 0) {
-            // need to set this to zero first for security
+            // reset funds - need to set this to zero first for security
             bidderFunds[msg.sender] = 0;
 
             if (payable(msg.sender).send(amount)) {
                 for (uint i=0; i<bids.length-1; i++) {
                     if (bids[i].bidder == msg.sender) {
+                        // set bid as inactove
                         bids[i].active = false;
                     }
                 }
             } else {
+                // handle failed send()
                 bidderFunds[msg.sender] = amount;
             }
         }
     }
 
-    // use case - made mistake
+    // use case - bidder entered unintented bid amount
     function recallBid() validPhase(Phase.Start) public returns(bool) {
+        // only highest bidder can recall bid - others use withdraw()
         require(msg.sender == highestBidder, "msg.sender != highestBidder");
 
         address payable msgSenderPayable = payable(msg.sender);
@@ -146,7 +151,7 @@ contract Auction {
                 bids[i].active = false;
 
                 if (msgSenderPayable.send(amountToSend)) {
-                    // update overall pending returns
+                    // subtract from amount to be withdrawn after auction
                     bidderFunds[highestBidder] -= amountToSend;
 
                     // set previous highest bidder as new highest
